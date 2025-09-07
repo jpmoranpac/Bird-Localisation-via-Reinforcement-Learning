@@ -32,7 +32,6 @@ class GridBirdsEnv(gym.Env):
         self.action_space = spaces.Box(
             low=-1, high=1, shape=(2,), dtype=np.float32
         )
-        self.observation_space = spaces.Dict()
 
         # Bird population range
         self.min_birds = min_birds
@@ -41,6 +40,13 @@ class GridBirdsEnv(gym.Env):
         self.num_birds = 0
         # Bird 2D location matrix, -1 indicating no location
         self.bird_pos = np.full((self.max_birds, 2), -1, dtype=np.int32)
+
+        # Agent X & Y, each bird's X & Y, number of birds
+        obs_size = 2 + (self.max_birds * 2) + 1
+        self.observation_space = spaces.Box(
+            low=-1.0, high=max(self.width, self.height),
+            shape=(obs_size,), dtype=np.float32
+        )
 
         # Steps per episode
         self.max_steps = max_steps
@@ -62,15 +68,23 @@ class GridBirdsEnv(gym.Env):
         for i in range(self.num_birds):
             self.bird_pos[i] = [int(rng.integers(0, self.width)),
              int(rng.integers(0, self.height))]
+            
+        centroid = np.mean(self.bird_pos[: self.num_birds], axis=0)
+        self.prev_dist = np.linalg.norm(self.agent_pos - centroid)
 
         return self._get_obs(), {}
 
-    def _get_obs(self) -> Dict:
-        return {
-            "agent": self.agent_pos.copy(),
-            "birds": self.bird_pos.copy(),
-            "num_birds": int(self.num_birds),
-        }
+    def _get_obs(self):
+        # agent position (2,)
+        agent = self.agent_pos
+
+        # nodes positions, pad with -1
+        nodes = self.bird_pos.flatten().astype(np.float32)
+
+        # number of nodes
+        num_birds = np.array([self.num_birds], dtype=np.float32)
+
+        return np.concatenate([agent, nodes, num_birds], axis=0)
 
     def step(self, actions):
         self.step_count += 1
@@ -79,6 +93,22 @@ class GridBirdsEnv(gym.Env):
                                  0, [self.width, self.height])
 
         reward = 0.0
+
+        # Goal: reach centroid of birds
+        centroid = np.mean(self.bird_pos[: self.num_birds], axis=0)
+        dist = np.linalg.norm(self.agent_pos - centroid)
+
+        # Reward: positive if closer, negative if farther
+        reward = self.prev_dist - dist
+        self.prev_dist = dist
+
+        # Bonus for reaching centroid and terminate
+        if dist < 0.5:
+            reward += 10.0
+            terminated = True
+        else:
+            terminated = False
+
         terminated = False
         truncated = self.step_count >= self.max_steps
 
@@ -106,16 +136,34 @@ class GridBirdsEnv(gym.Env):
     def close(self):
         plt.close()
 
+import time
+from stable_baselines3 import PPO
+from stable_baselines3.common.env_util import make_vec_env
+
 if __name__ == "__main__":
     env = GridBirdsEnv(width=5, height=5, min_birds=1, max_birds=4,
-                       max_steps=10, render_mode="human")
+                       max_steps=30)
     obs, info = env.reset()
 
-    for _ in range(50):
-        action = env.action_space.sample()
+    # Define model
+    model = PPO("MlpPolicy", env, verbose=1)
+
+    # Train for some timesteps
+    model.learn(total_timesteps=50_000)
+
+    # Save model
+    model.save("trained_bird_chaser")
+
+    # Use render_mode="human" to enable plotting
+    env = GridBirdsEnv(width=5, height=5, min_birds=1, max_birds=4,
+                       max_steps=30, render_mode="human")
+    obs, info = env.reset()
+
+    terminated, truncated = False, False
+    while not (terminated or truncated):
+        action, _ = model.predict(obs, deterministic=True)
         obs, reward, terminated, truncated, info = env.step(action)
         env.render()
-        if terminated or truncated:
-            obs, info = env.reset()
+        time.sleep(0.1)
 
     env.close()
