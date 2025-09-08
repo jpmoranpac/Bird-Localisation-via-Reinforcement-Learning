@@ -29,10 +29,6 @@ class GridBirdsEnv(gym.Env):
 
         # Agent position
         self.agent_pos = np.array([0, 0], dtype=np.int32)
-        self.action_space = spaces.Box(
-            low=-1, high=1, shape=(2,), dtype=np.float32
-        )
-
         # Bird population range
         self.min_birds = min_birds
         self.max_birds = max_birds
@@ -41,8 +37,14 @@ class GridBirdsEnv(gym.Env):
         # Bird 2D location matrix, -1 indicating no location
         self.bird_pos = np.full((self.max_birds, 2), -1, dtype=np.int32)
 
-        # Agent X & Y, each bird's X & Y, number of birds
-        obs_size = 2 + (self.max_birds * 2) + 1
+        # Action Space
+        self.action_space = spaces.Box(
+            low=np.array([-1, -1, 0], dtype=np.float32),
+            high=np.array([ 1,  1, self.max_birds], dtype=np.float32),
+            dtype=np.float32
+        )
+        # Observations: Agent X & Y, each bird's volume
+        obs_size = 2 + self.max_birds
         self.observation_space = spaces.Box(
             low=-1.0, high=max(self.width, self.height),
             shape=(obs_size,), dtype=np.float32
@@ -75,21 +77,22 @@ class GridBirdsEnv(gym.Env):
         return self._get_obs(), {}
 
     def _get_obs(self):
-        # agent position (2,)
-        agent = self.agent_pos
+        # Bird sounds (volumes = inverse distance)
+        sounds = []
+        for bird in self.bird_pos:
+            d = np.linalg.norm(self.agent_pos - bird)
+            sounds.append(1.0 / (d + 1e-3))
+        while len(sounds) < self.max_birds:
+            sounds.append(0.0)
 
-        # nodes positions, pad with -1
-        nodes = self.bird_pos.flatten().astype(np.float32)
-
-        # number of nodes
-        num_birds = np.array([self.num_birds], dtype=np.float32)
-
-        return np.concatenate([agent, nodes, num_birds], axis=0)
-
+        return np.concatenate([self.agent_pos, sounds], dtype=np.float32)
+    
     def step(self, actions):
         self.step_count += 1
 
-        self.agent_pos = np.clip(self.agent_pos + actions,
+        agent_move = actions[:2]
+        agent_guess = int(np.round(actions[2]))
+        self.agent_pos = np.clip(self.agent_pos + agent_move,
                                  0, [self.width, self.height])
 
         reward = 0.0
