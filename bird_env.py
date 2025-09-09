@@ -14,7 +14,7 @@ class GridBirdsEnv(gym.Env):
         min_birds:  int = 1,
         max_birds:  int = 5,
         max_steps:  int = 100,
-        sound_range:float = 1.5,
+        sound_range:float = 10,
         render_mode:str | None = None,
     ):
         super().__init__()
@@ -71,8 +71,7 @@ class GridBirdsEnv(gym.Env):
             self.bird_pos[i] = [int(rng.integers(0, self.width)),
              int(rng.integers(0, self.height))]
             
-        centroid = np.mean(self.bird_pos[: self.num_birds], axis=0)
-        self.prev_dist = np.linalg.norm(self.agent_pos - centroid)
+        self.guess = None
 
         return self._get_obs(), {}
 
@@ -95,31 +94,18 @@ class GridBirdsEnv(gym.Env):
         self.step_count += 1
 
         agent_move = actions[:2]
-        agent_guess = int(np.round(actions[2]))
+        self.guess = actions[2]
         self.agent_pos = np.clip(self.agent_pos + agent_move,
                                  0, [self.width, self.height])
 
-        reward = 0.0
-
-        # Goal: reach centroid of birds
-        centroid = np.mean(self.bird_pos[: self.num_birds], axis=0)
-        dist = np.linalg.norm(self.agent_pos - centroid)
-
-        # Reward: positive if closer, negative if farther
-        reward = self.prev_dist - dist
-        self.prev_dist = dist
-
-        # Bonus for reaching centroid and terminate
-        if dist < 0.5:
-            reward += 10.0
-            terminated = True
-        else:
-            terminated = False
+        # Reward: how close the guess is to the true number
+        reward = -abs(float(self.guess) - float(self.num_birds))
 
         terminated = False
         truncated = self.step_count >= self.max_steps
 
         obs = self._get_obs()
+        
         return obs, reward, terminated, truncated, {}
 
     def render(self):
@@ -129,7 +115,11 @@ class GridBirdsEnv(gym.Env):
         plt.ylim(-0.5, self.height + 0.5)
         plt.grid(True)
         plt.legend(loc="upper right")
-        plt.title(f"Step {self.step_count}")
+        if self.guess is not None:
+            plt.title(f"Step {self.step_count} | Guess={self.guess} | True={self.num_birds}")
+        else:
+            plt.title(f"Step {self.step_count} | True={self.num_birds}")
+        
 
         # Draw agents and birds
         plt.scatter(self.agent_pos[0], self.agent_pos[1], c="red", s=200,
@@ -143,6 +133,7 @@ class GridBirdsEnv(gym.Env):
 
         # Pause for humans
         plt.pause(0.01)
+        print("Step" + str(self.step_count) + " Guess " + str(self.guess) + " True " + str(self.num_birds));
 
     def close(self):
         plt.close()
