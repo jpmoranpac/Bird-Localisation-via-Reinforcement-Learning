@@ -79,7 +79,7 @@ class GridBirdsEnv(gym.Env):
     def _get_obs(self):
         # Bird sounds (volumes = inverse distance)
         sounds = []
-        for bird in self.bird_pos:
+        for bird in self.bird_pos[:self.num_birds]:
             d = np.linalg.norm(self.agent_pos - bird)
             if d <= self.sound_range:
                 sounds.append(1.0 / (d + 1e-3))
@@ -134,7 +134,7 @@ class GridBirdsEnv(gym.Env):
         # Draw agents and birds
         plt.scatter(self.agent_pos[0], self.agent_pos[1], c="red", s=200,
                     marker="o", label="Agent")
-        for bird in self.bird_pos:
+        for bird in self.bird_pos[:self.num_birds]:
             plt.scatter(bird[0], bird[1], c="red", marker="x")
             circle = patches.Circle(bird, radius=self.sound_range,
                                     fill=False, color="gray", linestyle="--",
