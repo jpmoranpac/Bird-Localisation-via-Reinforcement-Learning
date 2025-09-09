@@ -1,10 +1,8 @@
-import random
-from typing import Dict, Tuple
-
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 class GridBirdsEnv(gym.Env):
     metadata = {"render_modes": ["human"], "render_fps": 4}
@@ -16,7 +14,7 @@ class GridBirdsEnv(gym.Env):
         min_birds:  int = 1,
         max_birds:  int = 5,
         max_steps:  int = 100,
-        seed:       int | None = None,
+        sound_range:float = 1.5,
         render_mode:str | None = None,
     ):
         super().__init__()
@@ -36,6 +34,8 @@ class GridBirdsEnv(gym.Env):
         self.num_birds = 0
         # Bird 2D location matrix, -1 indicating no location
         self.bird_pos = np.full((self.max_birds, 2), -1, dtype=np.int32)
+        # Distance from which birds can be heard
+        self.sound_range = sound_range
 
         # Action Space
         self.action_space = spaces.Box(
@@ -81,7 +81,11 @@ class GridBirdsEnv(gym.Env):
         sounds = []
         for bird in self.bird_pos:
             d = np.linalg.norm(self.agent_pos - bird)
-            sounds.append(1.0 / (d + 1e-3))
+            if d <= self.sound_range:
+                sounds.append(1.0 / (d + 1e-3))
+            else:
+                sounds.append(0.0)
+
         while len(sounds) < self.max_birds:
             sounds.append(0.0)
 
@@ -130,8 +134,12 @@ class GridBirdsEnv(gym.Env):
         # Draw agents and birds
         plt.scatter(self.agent_pos[0], self.agent_pos[1], c="red", s=200,
                     marker="o", label="Agent")
-        plt.scatter(self.bird_pos[:,0], self.bird_pos[:,1], c="blue", s=200,
-                    marker="x", label="Birds")
+        for bird in self.bird_pos:
+            plt.scatter(bird[0], bird[1], c="red", marker="x")
+            circle = patches.Circle(bird, radius=self.sound_range,
+                                    fill=False, color="gray", linestyle="--",
+                                    alpha=0.5)
+            plt.gca().add_patch(circle)
 
         # Pause for humans
         plt.pause(0.01)
